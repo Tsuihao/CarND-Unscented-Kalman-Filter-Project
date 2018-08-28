@@ -102,6 +102,27 @@ public:
    * @param meas_package The measurement at k+1
    */
   void UpdateRadar(MeasurementPackage meas_package);
+
+protected:
+  /*
+   * Generates the augmented sigma points to handle the non-linear function
+   * @param Xsig_aug The augmented sigma points
+   */
+  void GenerateAugSigmaPoints(Eigen::MatrixXd& Xsig_aug);
+
+  /*
+   * Predict the sigma points to handle the non-linear function
+   * The output is directly store into member variable Xsig_pred_
+   * @param Xsig_aug (Read only)
+   * @param delta_t time difference
+   */
+  void PredictSigmaPonts(const Eigen::MatrixXd& Xsig_aug, const double& delta_t);
+
+  /*
+   * Helper functions for predicting sigma points
+   */
+  void BuildTransitionVec(const VectorXd& in, const double& delta_t, VectorXd& out);
+  void BUildNoiseVec(const VectorXd& in, const double& delta_t, VectorXd& out);
 };
 
 #endif /* UKF_H */
