@@ -67,6 +67,12 @@ public:
   ///* Sigma point spreading parameter
   double lambda_;
 
+  ///* Lidar sensor noise 
+  MatrixXd R_lidar_;
+
+  ///* Radar sensor noise
+  MatrixXd R_radar_;
+
 
   /**
    * Constructor

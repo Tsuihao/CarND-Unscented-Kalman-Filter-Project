@@ -13,7 +13,7 @@ using std::vector;
  */
 UKF::UKF() {
   // if this is false, laser measurements will be ignored (except during init)
-  use_laser_ = true;
+  use_laser_ = false;
 
   // if this is false, radar measurements will be ignored (except during init)
   use_radar_ = true;
@@ -64,8 +64,26 @@ UKF::UKF() {
 
   Xsig_pred_ = MatrixXd(5, 2*n_aug_);
 
-  weights_ = VectorXd(2*n_aug_);
+  weights_ = VectorXd(2*n_aug_+1);
 
+  // Build weights
+  weights_(0) = lambda_/(lambda_ + n_aug_);
+  double dummy = 0.5/(lambda_ + n_aug_);
+  for(int i = 1; i < 2*n_aug_+1; ++i)
+  {
+    weights_(i) = dummy;
+  }
+  
+  // Build R_lidar_
+  R_lidar_ = MatrixXd(2, 2);
+  R_lidar_ << std_laspx_*std_laspx_, 0,
+              0, std_laspy_*std_laspy_;
+
+  // Build R_radar_
+  R_radar_ = MatrixXd(3, 3);
+  R_radar_ <<  std_radr_*std_radr_, 0, 0,
+                0, std_radphi_*std_radphi_, 0,
+                0, 0, std_radrd_*std_radrd_;     
 
 }
 
@@ -117,6 +135,7 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
     {
         cout<<"laser measurement"<<endl;
         double dt = meas_package.timestamp_ - time_us_;
+        dt /= 1000000;
         time_us_ = meas_package.timestamp_;      // update time right away
         cout<< "dt="<<dt<<endl;
 
@@ -127,6 +146,7 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
     {
         cout<<"radar measurement"<<endl;
         double dt = meas_package.timestamp_ - time_us_;
+        dt /= 1000000;
         time_us_ = meas_package.timestamp_;      // update time right away
         cout<< "dt="<<dt<<endl;
 
@@ -152,10 +172,27 @@ void UKF::Prediction(double delta_t) {
   MatrixXd Xsig_aug = MatrixXd(7, 2*n_aug_+1);
   GenerateAugSigmaPoints(Xsig_aug);
   PredictSigmaPonts(Xsig_aug, delta_t);
-  cout<<"Xsig_pred_ \n"<<Xsig_pred_<<endl;
+  cout<<"prediction: Xsig_pred_ =\n"<<Xsig_pred_<<endl;
 
-  //TODO(hao): Predict the mean and covariance with sigma points
+  //Predict the mean and covariance with sigma points
+  x_.fill(0.0);
+  for(int i = 0; i < 2*n_aug_+1; ++i)
+  {
+    x_ += weights_(i) * Xsig_pred_.col(i);
+  }
+  cout<< "prediction: x_ =\n"<<x_<<endl;
 
+  P_.fill(0.0);
+  for(int i = 0; i < 2*n_aug_+1; ++i)
+  {
+    VectorXd x_diff = Xsig_pred_.col(i) - x_;
+    // Normalized the yaw angle
+    while(x_diff(3) > M_PI) x_diff(3) -= 2.0 * M_PI;
+    while(x_diff(3) < -M_PI) x_diff(3) += 2.0 * M_PI;
+  
+    P_ += weights_(i) * x_diff * x_diff.transpose();
+  }
+  cout<< "prediction: P_ =\n"<<P_<<endl;
 }
 
 
@@ -191,6 +228,94 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
 
   You'll also need to calculate the radar NIS.
   */
+  // BUild Zxig
+  VectorXd z_pred = VectorXd(3);
+  MatrixXd Zxig_pred = MatrixXd(3, 2*n_aug_+1); // radar measurement dim = 3 
+  MatrixXd S = MatrixXd(3, 3);
+  MatrixXd T = MatrixXd(5, 3); // cross-correlation between sigma points in state space and measurement space
+  MatrixXd K = MatrixXd(5, 3); // Kalman gain
+
+  // Calculate Zxig_pred
+  // construct from Xsig_pred_
+  for(int i = 0; i < 2*n_aug_+1; ++i)
+  {
+
+    double px = Xsig_pred_(0, i);
+    double py = Xsig_pred_(1, i);
+    double v = Xsig_pred_(2, i);
+    double yaw = Xsig_pred_(3, i);
+
+    double rho = sqrt(px*px + py*py);
+    double phi = atan2(py, px);
+    double rho_rate(0);
+    if(rho < 0.001)
+    {
+      rho_rate = numeric_limits<double>::infinity();
+    }
+    else
+    {
+      rho_rate = (px*cos(yaw)*v + py*sin(yaw)*v) / rho;
+    }
+
+    Zxig_pred.col(i) << rho,
+                   phi, 
+                   rho_rate;
+  }
+  cout<< "UpdateRadar: Zxig_pred=\n"<<Zxig_pred<<endl;
+
+  // Calculate z_pred
+  z_pred.fill(0.0);
+  for(int i = 0; i < 2*n_aug_+1; ++i)
+  {
+    z_pred += weights_(i) * Zxig_pred.col(i);
+  }
+  cout<< "UpdateRadar: z_pred=\n"<<z_pred<<endl;
+
+  // Calculate S
+  S.fill(0.0);
+  for(int i = 0; i< 2*n_aug_+1; ++i)
+  {
+    VectorXd z_diff = Zxig_pred.col(i) - z_pred;
+
+    // Normalized the angle
+    while(z_diff(2) > M_PI) z_diff(2) -= 2 * M_PI;
+    while(z_diff(2) < -M_PI) z_diff(2) += 2 * M_PI;
+
+
+    S += weights_(i) * z_diff * z_diff.transpose();
+  }
+  S += R_radar_;
+  cout<< "UpdateRadar: S=\n"<<S<<endl;
+
+  // Calculate T
+  T.fill(0.0);
+  for(int i = 0; i < 2*n_aug_+1; ++i)
+  {
+    VectorXd x_diff = Xsig_pred_.col(i) - x_;
+
+    // Normalized
+    while(x_diff(3) > M_PI) x_diff(3) -= 2.0 * M_PI;
+    while(x_diff(3) < -M_PI) x_diff(3) += 2.0 * M_PI;
+
+    VectorXd z_diff = Zxig_pred.col(i) - z_pred;
+    // Normalized the angle
+    while(z_diff(2) > M_PI) z_diff(2) -= 2 * M_PI;
+    while(z_diff(2) < -M_PI) z_diff(2) += 2 * M_PI;
+
+    T += weights_(i) * x_diff * z_diff.transpose();
+  }
+  cout<< "UpdateRadar: T=\n"<<T<<endl;
+
+  // Calculate K
+  K = T * S.inverse();
+  cout<< "UpdateRadar: K=\n"<<K<<endl;
+
+  // Update
+  x_ = x_ + K * (meas_package.raw_measurements_ - z_pred);
+  P_ = P_ - K * S * K.transpose();
+
+  cout<< "UpdateRadar: complete x=\n"<<x_<<endl;
+  cout<< "UpdateRadar: complete P=\n"<<P_<<endl;
 
 }
 /////////////////////////////////////////////////////////////////////////////////////////
