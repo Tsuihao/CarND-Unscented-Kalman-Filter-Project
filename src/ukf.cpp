@@ -62,7 +62,7 @@ UKF::UKF() {
 
   lambda_ = 3 - n_aug_;
 
-  Xsig_pred_ = MatrixXd(5, 2*n_aug_);
+  Xsig_pred_ = MatrixXd(5, 2*n_aug_+1);
 
   weights_ = VectorXd(2*n_aug_+1);
 
@@ -74,6 +74,12 @@ UKF::UKF() {
     weights_(i) = dummy;
   }
   
+  // Build Q_
+  Q_ = MatrixXd(2,2);
+  Q_ << std_a_*std_a_, 0,
+        0, std_yawdd_*std_yawdd_;
+
+
   // Build R_lidar_
   R_lidar_ = MatrixXd(2, 2);
   R_lidar_ << std_laspx_*std_laspx_, 0,
@@ -83,7 +89,17 @@ UKF::UKF() {
   R_radar_ = MatrixXd(3, 3);
   R_radar_ <<  std_radr_*std_radr_, 0, 0,
                 0, std_radphi_*std_radphi_, 0,
-                0, 0, std_radrd_*std_radrd_;     
+                0, 0, std_radrd_*std_radrd_;   
+
+
+
+
+  //TBD(tsui): Not sure about this 
+  P_ << 100, 0, 0, 0, 0,
+          0, 100, 0, 0, 0,
+          0, 0, 9, 0, 0,
+          0, 0, 0, 1, 0,
+          0, 0, 0, 0, 1;  
 
 }
 
@@ -103,7 +119,7 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
   if(!is_initialized_)
   {
     cout<<"init"<<endl;
-    if(use_laser_ && (meas_package.sensor_type_= MeasurementPackage::LASER))
+    if(use_laser_ && (meas_package.sensor_type_== MeasurementPackage::LASER))
     {
         cout<<"laser init"<<endl;
         x_ << meas_package.raw_measurements_(0),
@@ -113,16 +129,17 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
               0;
 
     }
-    if(use_radar_ && (meas_package.sensor_type_ = MeasurementPackage::RADAR))
+    if(use_radar_ && (meas_package.sensor_type_ == MeasurementPackage::RADAR))
     {
         cout<<"radar init"<<endl;
         double rho = meas_package.raw_measurements_(0);
         double phi = meas_package.raw_measurements_(1);
+        double rho_rate = meas_package.raw_measurements_(2);
         x_ << rho * cos(phi),
-             rho * sin(phi),
-             0,
-             0,
-             0;
+              rho * sin(phi),
+              rho_rate, //TBD
+              phi, // TBD
+              phi; // TBD
     }
 
     is_initialized_ = true;
@@ -131,9 +148,13 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
   }
   else
   {
-    if(use_laser_ && (meas_package.sensor_type_ = MeasurementPackage::LASER))
+    if(use_laser_ && (meas_package.sensor_type_ == MeasurementPackage::LASER))
     {
-        cout<<"laser measurement"<<endl;
+        cout<<"laser measurement = \n"<<meas_package.raw_measurements_<<endl;
+        if(meas_package.raw_measurements_.size() != 2)
+        {
+          cout<<"[Warning]: laser measuremnt's dim is not 2!"<<endl;
+        }
         double dt = meas_package.timestamp_ - time_us_;
         dt /= 1000000;
         time_us_ = meas_package.timestamp_;      // update time right away
@@ -142,9 +163,13 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
         Prediction(dt);
         UpdateLidar(meas_package);
     }
-    if(use_radar_ && (meas_package.sensor_type_ = MeasurementPackage::RADAR))
+    if(use_radar_ && (meas_package.sensor_type_ == MeasurementPackage::RADAR))
     {
-        cout<<"radar measurement"<<endl;
+        cout<<"radar measurement =\n"<<meas_package.raw_measurements_<<endl;
+        if(meas_package.raw_measurements_.size() != 3)
+        {
+          cout<<"[Warning]: radar measuremnt's dim is not 3!"<<endl;
+        }
         double dt = meas_package.timestamp_ - time_us_;
         dt /= 1000000;
         time_us_ = meas_package.timestamp_;      // update time right away
@@ -170,7 +195,9 @@ void UKF::Prediction(double delta_t) {
   */
   
   MatrixXd Xsig_aug = MatrixXd(7, 2*n_aug_+1);
+  cout<<"prediction: generate sigma points"<<endl;
   GenerateAugSigmaPoints(Xsig_aug);
+  cout<<"prediction: predict sigma points"<<endl;
   PredictSigmaPonts(Xsig_aug, delta_t);
   cout<<"prediction: Xsig_pred_ =\n"<<Xsig_pred_<<endl;
 
@@ -324,18 +351,13 @@ void UKF::GenerateAugSigmaPoints(Eigen::MatrixXd& Xsig_aug)
   cout<<"construct the augmented state"<<endl;
   VectorXd x_aug = VectorXd(7); 
   x_aug.head(5) = x_; 
+  x_aug(5) = 0;
   x_aug(6) = 0;
-  x_aug(7) = 0;
-
-  cout<<"construct Q"<<endl;
-  MatrixXd Q = MatrixXd(2,2);
-  Q << std_a_*std_a_, 0,
-       0, std_yawdd_*std_yawdd_;
     
   cout<<"construct P_aug"<<endl;
-  MatrixXd P_aug = MatrixXd(7, 2*n_aug_+1);
+  MatrixXd P_aug = MatrixXd(7, 7);
   P_aug.topLeftCorner(5,5) = P_;
-  P_aug.bottomRightCorner(2,2) = Q;
+  P_aug.bottomRightCorner(2,2) = Q_;
   cout<<"P_aug \n"<<P_aug<<endl;
 
   MatrixXd A = P_aug.llt().matrixL();
@@ -347,7 +369,7 @@ void UKF::GenerateAugSigmaPoints(Eigen::MatrixXd& Xsig_aug)
   for(int i = 1; i <= n_aug_; ++i)
   {
     Xsig_aug.col(i) = x_aug + s * A.col(i-1);
-    Xsig_aug.col(i+n_aug_-1) = x_aug - s * A.col(i-1);
+    Xsig_aug.col(i+n_aug_) = x_aug - s * A.col(i-1);
   }
   cout<<"Xsig_aug \n"<<Xsig_aug<<endl;
 }
@@ -375,7 +397,7 @@ void UKF::BuildTransitionVec(const VectorXd& in, const double& delta_t, VectorXd
   double yaw_rate = in(4);
 
   // check yaw_rate
-  if(yaw_rate < 0.001)
+  if(abs(yaw_rate) < 0.001)
   {
     cout<<"[Warning]: yaw_rate is nearly 0"<<endl;
     out << v * cos(yaw) * delta_t,
