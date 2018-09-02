@@ -13,7 +13,7 @@ using std::vector;
  */
 UKF::UKF() {
   // if this is false, laser measurements will be ignored (except during init)
-  use_laser_ = false;
+  use_laser_ = true;
 
   // if this is false, radar measurements will be ignored (except during init)
   use_radar_ = true;
@@ -133,7 +133,7 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
       }
       else
       {
-        cout<<"[Warning]: laser measurement"<<endl;
+        cout<<"[Warning]: skip laser measurement"<<endl;
         return;
       }
     }
@@ -153,7 +153,7 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
       }
       else
       {
-        cout<<"[Warning]: radar measurement"<<endl;
+        cout<<"[Warning]: skip radar measurement"<<endl;
         return;
       }
     }
@@ -231,6 +231,7 @@ void UKF::Prediction(double delta_t) {
   for(int i = 0; i < 2*n_aug_+1; ++i)
   {
     VectorXd x_diff = Xsig_pred_.col(i) - x_;
+    cout<<"P_prediction: x_diff=\n"<<x_diff<<endl;
     // Normalized the yaw angle
     while(x_diff(3) > M_PI) x_diff(3) -= 2.0 * M_PI;
     while(x_diff(3) < -M_PI) x_diff(3) += 2.0 * M_PI;
@@ -256,6 +257,68 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
 
   You'll also need to calculate the lidar NIS.
   */
+  VectorXd z_pred = VectorXd(2);
+  MatrixXd Zxig_pred = MatrixXd(2, 2*n_aug_+1);
+  MatrixXd S = MatrixXd(2, 2);
+  MatrixXd T = MatrixXd(5, 2);
+  MatrixXd K = MatrixXd(5, 2);
+
+  // Calculate Zxig_pred
+  for(int i = 0; i < 2*n_aug_+1; ++i)
+  {
+    double px = Xsig_pred_(0, i);
+    double py = Xsig_pred_(1, i);
+    Zxig_pred.col(i) << px,
+                        py;
+  }
+  cout<<"UpdateLidar: Zxig_pred=\n"<<Zxig_pred<<endl;
+
+  // Calculate z_pred
+  z_pred.fill(0.0);
+  for(int i = 0; i < 2*n_aug_+1; ++i)
+  {
+    z_pred += weights_(i) * Zxig_pred.col(i);
+  }
+  cout<<"UpdateLidar: z_pred=\n"<<z_pred<<endl;
+
+  // Calculate S
+  S.fill(0.0);
+  for(int i = 0; i < 2*n_aug_+1; ++i)
+  {
+    VectorXd z_diff = Zxig_pred.col(i) - z_pred;
+    S += weights_(i) * z_diff * z_diff.transpose();
+  }
+  S += R_lidar_;
+  cout<<"UpdateLidar: S=\n"<<S<<endl;
+
+  // Calculate T
+  T.fill(0.0);
+  for(int i = 0; i < 2*n_aug_+1; ++i)
+  {
+    VectorXd x_diff = Xsig_pred_.col(i) - x_;
+
+    // normalize the angle
+    if(x_diff(3) > M_PI) x_diff(3) -= 2 * M_PI;
+    if(x_diff(3) < -M_PI) x_diff(3) += 2 * M_PI;
+
+    VectorXd z_diff = Zxig_pred.col(i) - z_pred;
+    
+    T += weights_(i) * x_diff * z_diff.transpose();
+  }
+  cout<<"UpdateLidar: T=\n"<<T<<endl;
+
+  // Calculate K
+  K = T * S.inverse();
+  cout<<"UpdateLidar: K=\n"<<K<<endl;
+
+  // Update X
+  x_ = x_ + K * (meas_package.raw_measurements_ - z_pred);
+  cout<<"UpdateLidar: x=\n"<<x_<<endl;
+
+  // Updata P 
+  P_ = P_ - K * S * K.transpose();
+  cout<<"UpdateLidar: P_=\n"<<P_<<endl;
+
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
