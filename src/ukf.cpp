@@ -25,10 +25,10 @@ UKF::UKF() {
   P_ = MatrixXd(5, 5);
 
   // Process noise standard deviation longitudinal acceleration in m/s^2
-  std_a_ = 30;
+  std_a_ = 0.2;
 
   // Process noise standard deviation yaw acceleration in rad/s^2
-  std_yawdd_ = 30;
+  std_yawdd_ = 0.2;
   
   //DO NOT MODIFY measurement noise values below these are provided by the sensor manufacturer.
   // Laser measurement noise standard deviation position1 in m
@@ -119,8 +119,10 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
   if(!is_initialized_)
   {
     cout<<"init"<<endl;
-    if(use_laser_ && (meas_package.sensor_type_== MeasurementPackage::LASER))
+    if(meas_package.sensor_type_== MeasurementPackage::LASER)
     {
+      if(use_laser_)
+      {
         cout<<"laser init"<<endl;
         x_ << meas_package.raw_measurements_(0),
               meas_package.raw_measurements_(1),
@@ -128,19 +130,35 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
               0,
               0;
 
+      }
+      else
+      {
+        cout<<"[Warning]: laser measurement"<<endl;
+        return;
+      }
     }
-    if(use_radar_ && (meas_package.sensor_type_ == MeasurementPackage::RADAR))
+    if(meas_package.sensor_type_ == MeasurementPackage::RADAR)
     {
-        cout<<"radar init"<<endl;
-        double rho = meas_package.raw_measurements_(0);
-        double phi = meas_package.raw_measurements_(1);
-        double rho_rate = meas_package.raw_measurements_(2);
-        x_ << rho * cos(phi),
-              rho * sin(phi),
-              rho_rate, //TBD
-              phi, // TBD
-              phi; // TBD
+      if(use_radar_)
+      {
+          cout<<"radar init"<<endl;
+          double rho = meas_package.raw_measurements_(0);
+          double phi = meas_package.raw_measurements_(1);
+          double rho_rate = meas_package.raw_measurements_(2);
+          x_ << rho * cos(phi),
+                rho * sin(phi),
+                2, //TBD
+                0.5, // TBD
+                0.35; // TBD
+      }
+      else
+      {
+        cout<<"[Warning]: radar measurement"<<endl;
+        return;
+      }
     }
+
+    cout<<"init x_=\n"<<x_<<endl;
 
     is_initialized_ = true;
     time_us_ = meas_package.timestamp_;
