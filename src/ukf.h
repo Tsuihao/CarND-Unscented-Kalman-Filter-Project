@@ -132,6 +132,12 @@ protected:
    */
   void BuildTransitionVec(const VectorXd& in, const double& delta_t, VectorXd& out);
   void BUildNoiseVec(const VectorXd& in, const double& delta_t, VectorXd& out);
+
+  /**
+   * A helper function to calculate NIS
+   */
+  double CalculateNIS(const VectorXd& z,const VectorXd& z_pred, const MatrixXd& S);
+
 };
 
 #endif /* UKF_H */

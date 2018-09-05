@@ -25,10 +25,10 @@ UKF::UKF() {
   P_ = MatrixXd(5, 5);
 
   // Process noise standard deviation longitudinal acceleration in m/s^2
-  std_a_ = 0.2;
+  std_a_ = 2;
 
   // Process noise standard deviation yaw acceleration in rad/s^2
-  std_yawdd_ = 0.2;
+  std_yawdd_ = 0.3;
   
   //DO NOT MODIFY measurement noise values below these are provided by the sensor manufacturer.
   // Laser measurement noise standard deviation position1 in m
@@ -291,6 +291,10 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
   S += R_lidar_;
   cout<<"UpdateLidar: S=\n"<<S<<endl;
 
+  // Calculate NIS
+  double NIS = CalculateNIS(meas_package.raw_measurements_, z_pred, S);
+  cout<<"[NIS]: LidarNIS=\n"<<NIS<<endl;
+
   // Calculate T
   T.fill(0.0);
   for(int i = 0; i < 2*n_aug_+1; ++i)
@@ -394,6 +398,11 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
   }
   S += R_radar_;
   cout<< "UpdateRadar: S=\n"<<S<<endl;
+   
+  // NIS
+  double NIS = CalculateNIS(meas_package.raw_measurements_, z_pred, S);
+  cout<<"[NIS]: RadarNIS=\n"<<NIS<<endl;
+
 
   // Calculate T
   T.fill(0.0);
@@ -515,4 +524,10 @@ void UKF::BUildNoiseVec(const VectorXd& in, const double& delta_t, VectorXd& out
          delta_t * acc_noise,
          0.5 * dt2 * yaw_rate_noise,
          delta_t * yaw_rate_noise;
+}
+/////////////////////////////////////////////////////////////////////////////////////////
+double UKF::CalculateNIS(const VectorXd& z,const VectorXd& z_pred, const MatrixXd& S)
+{
+  VectorXd z_diff = z - z_pred;
+  return (z_diff.transpose() * S.inverse() * z_diff);
 }
