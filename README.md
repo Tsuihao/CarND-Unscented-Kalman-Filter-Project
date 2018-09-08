@@ -4,12 +4,12 @@ Self-Driving Car Engineer Nanodegree Program
 
 
 **[Youtube](https://www.youtube.com/watch?v=u4a8iKyfmTw&feature=youtu.be)**
-[![IMAGE ALT TEXT](./images/cover.png)](https://www.youtube.com/watch?v=u4a8iKyfmTw&feature=youtu.be)
+[![IMAGE ALT TEXT](./images/cover.PNG)](https://www.youtube.com/watch?v=u4a8iKyfmTw&feature=youtu.be)
 
 
 
 
----
+
 
 
 
